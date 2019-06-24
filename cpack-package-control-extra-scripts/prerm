@@ -1,0 +1,4 @@
+echo "PRErm $@"
+
+systemctl stop dbus-org.maui-accounts-dbus-daemon.service
+systemctl disable dbus-org.maui-accounts-dbus-daemon.service

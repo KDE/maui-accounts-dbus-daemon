@@ -10,23 +10,20 @@
 int main(int argc, char *argv[]) {
   QCoreApplication app(argc, argv);
 
-  if (!QDBusConnection::sessionBus().isConnected()) {
-    fprintf(stderr,
-            "Cannot connect to the D-Bus session bus.\n"
-            "To start it, run:\n"
-            "\teval `dbus-launch --auto-syntax`\n");
+  if (!QDBusConnection::systemBus().isConnected()) {
+    fprintf(stderr, "Cannot connect to the D-Bus system bus.\n");
     return 1;
   }
 
-  if (!QDBusConnection::sessionBus().registerService(SERVICE_NAME)) {
+  if (!QDBusConnection::systemBus().registerService(SERVICE_NAME)) {
     fprintf(stderr, "%s\n",
-            qPrintable(QDBusConnection::sessionBus().lastError().message()));
+            qPrintable(QDBusConnection::systemBus().lastError().message()));
     exit(1);
   }
 
   RootDBusInterface *interface = new RootDBusInterface();
-  QDBusConnection::sessionBus().registerObject(
-      "/", interface->name(), interface, QDBusConnection::ExportAllSlots);
+  QDBusConnection::systemBus().registerObject("/", interface->name(), interface,
+                                              QDBusConnection::ExportAllSlots);
 
   return app.exec();
 }

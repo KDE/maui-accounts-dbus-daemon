@@ -1,0 +1,6 @@
+echo "PREinst $@"
+
+systemctl is-active --quiet dbus-org.maui-accounts-dbus-daemon.service && systemctl stop dbus-org.maui-accounts-dbus-daemon.service
+systemctl is-active --quiet dbus-org.maui-accounts-dbus-daemon.service && systemctl disable dbus-org.maui-accounts-dbus-daemon.service
+
+exit 0

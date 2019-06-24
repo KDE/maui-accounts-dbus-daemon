@@ -1,0 +1,11 @@
+[Unit]
+Description=MAUI Accounts DBus Service
+
+[Service]
+Type=dbus
+BusName=org.mauikit.accounts
+ExecStart=/usr/bin/maui-accounts-dbus-daemon
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

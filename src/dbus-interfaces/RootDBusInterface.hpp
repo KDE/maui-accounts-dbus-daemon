@@ -3,7 +3,6 @@
 
 #include "DBusInterface.hpp"
 
-#include <KWallet>
 #include <QJsonObject>
 #include <QList>
 #include <QString>
@@ -18,26 +17,31 @@ class RootDBusInterface : public DBusInterface {
   RootDBusInterface();
 
  private:
-  KWallet::Wallet *wallet;
   QJsonObject accountsJsonObject;
 
-  const QString WALLET_FOLDER_NAME = "org.mauikit.accounts";
-  const QString WALLET_ENTRY_ACCOUNTS = "accounts";
   const QString JSON_FIELD_ACCOUNTS = "accounts";
-  const QString JSON_ACCOUNT_ARRAY_FIELD_EXTRAS = "extras";
-  const QString JSON_ACCOUNT_ARRAY_FIELD_USERNAME = "username";
-  const QString JSON_ACCOUNT_ARRAY_FIELD_ACCOUNTNAME = "account_name";
   const QString JSON_ACCOUNT_ARRAY_FIELD_ID = "_id";
+  const QString JSON_ACCOUNT_ARRAY_FIELD_SECRET = "secret";
+  const QString JSON_ACCOUNT_ARRAY_FIELD_APPID = "appId";
+  const QString JSON_ACCOUNT_ARRAY_FIELD_TYPE = "type";
+  const QString JSON_ACCOUNT_ARRAY_FIELD_USERNAME = "username";
+  const QString JSON_ACCOUNT_ARRAY_FIELD_PASSWORD = "password";
+  const QString JSON_ACCOUNT_ARRAY_FIELD_URL = "url";
 
   QString accountsJsonFilePath;
 
   void writeAccountsJsonObjectToFile();
+  QString getManifestPath(QString appId);
 
  public slots:
-  Q_SCRIPTABLE QList<QVariant> getAccountNames();
+  Q_SCRIPTABLE QList<QVariant> getAccountIds();
+  Q_SCRIPTABLE QList<QVariant> getAccountIdsByType(QString type);
   Q_SCRIPTABLE QMap<QString, QVariant> getAccount(QString id);
-  Q_SCRIPTABLE QString createAccount(QString name, QString username,
-                                     QString password, QString extras);
+  Q_SCRIPTABLE QString getAccountPassword(QString secret);
+  Q_SCRIPTABLE QString createWebDAVAccount(QString appId, QString username,
+                                           QString password, QString url);
+  Q_SCRIPTABLE QString createCardDAVAccount(QString appId, QString username,
+                                            QString password, QString url);
   Q_SCRIPTABLE bool removeAccount(QString id);
 };
 

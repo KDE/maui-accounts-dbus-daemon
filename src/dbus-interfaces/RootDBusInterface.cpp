@@ -1,15 +1,25 @@
 #include "RootDBusInterface.hpp"
 
+#include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDebug>
 #include <QDir>
+#include <QEventLoop>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QNetworkReply>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QUuid>
+#include <libdavclient/CardDAV.hpp>
+#include <libdavclient/utils/CardDAVReply.hpp>
 
 QString RootDBusInterface::name() { return "org.mauikit.accounts"; }
 
 RootDBusInterface::RootDBusInterface() {
+  qDebug() << QStandardPaths::writableLocation(
+      QStandardPaths::StandardLocation::AppDataLocation);
+
   QDir appDataFolder(QStandardPaths::writableLocation(
       QStandardPaths::StandardLocation::AppDataLocation));
   if (!appDataFolder.exists()) {
@@ -20,13 +30,6 @@ RootDBusInterface::RootDBusInterface() {
       QStandardPaths::writableLocation(
           QStandardPaths::StandardLocation::AppDataLocation) +
       "/accounts.json";
-  wallet = KWallet::Wallet::openWallet(KWallet::Wallet::NetworkWallet(), 0,
-                                       KWallet::Wallet::OpenType::Synchronous);
-
-  if (!wallet->hasFolder(WALLET_FOLDER_NAME)) {
-    wallet->createFolder(WALLET_FOLDER_NAME);
-  }
-  wallet->setFolder(WALLET_FOLDER_NAME);
 
   QFile accountJsonFile(accountsJsonFilePath);
 
@@ -51,23 +54,38 @@ void RootDBusInterface::writeAccountsJsonObjectToFile() {
   accountJsonFile.close();
 }
 
-QList<QVariant> RootDBusInterface::getAccountNames() {
-  qDebug() << "getAccountNames :";
+QString RootDBusInterface::getManifestPath(QString appId) {
+  return "/usr/share/maui-accounts/manifests/" + appId + ".json";
+}
 
+QList<QVariant> RootDBusInterface::getAccountIds() {
+  // TODO : Return a List of Maps containing the account data except passwords
+  return getAccountIdsByType("");
+}
+
+QList<QVariant> RootDBusInterface::getAccountIdsByType(QString type) {
+  qDebug().noquote() << "* List of account names requested of type `" + type +
+                            "`";
   QList<QVariant> list;
   QJsonArray accounts = accountsJsonObject[JSON_FIELD_ACCOUNTS].toArray();
   QList<QString> accountsStringArray;
 
   for (int i = 0; i < accounts.size(); i++) {
     QJsonObject account = accounts[i].toObject();
-    list.append(account[JSON_ACCOUNT_ARRAY_FIELD_ACCOUNTNAME].toString());
+
+    if (type == "" ||
+        type == account[JSON_ACCOUNT_ARRAY_FIELD_TYPE].toString()) {
+      list.append(account[JSON_ACCOUNT_ARRAY_FIELD_ID].toString());
+    }
   }
 
   return list;
 }
 
 QMap<QString, QVariant> RootDBusInterface::getAccount(QString id) {
-  qDebug() << "getAccount :" << id;
+  // TODO : Create a ENUM for the return value map KEY
+
+  qDebug().noquote() << "* Account data requested";
 
   QMap<QString, QVariant> returnVal;
   QJsonArray accounts = accountsJsonObject[JSON_FIELD_ACCOUNTS].toArray();
@@ -76,55 +94,132 @@ QMap<QString, QVariant> RootDBusInterface::getAccount(QString id) {
   for (int i = 0; i < accounts.size(); i++) {
     QJsonObject account = accounts[i].toObject();
 
-    if (account[JSON_ACCOUNT_ARRAY_FIELD_ID] == id) {
-      QByteArray password;
-      wallet->readEntry(account[JSON_ACCOUNT_ARRAY_FIELD_USERNAME].toString(),
-                        password);
+    if (account[JSON_ACCOUNT_ARRAY_FIELD_ID].toString() == id) {
+      qDebug().noquote()
+          << "    Found user `" +
+                 account[JSON_ACCOUNT_ARRAY_FIELD_USERNAME].toString() + "`";
 
-      returnVal.insert(
-          "name", account[JSON_ACCOUNT_ARRAY_FIELD_ACCOUNTNAME].toString());
+      returnVal.insert("id", account[JSON_ACCOUNT_ARRAY_FIELD_ID].toString());
+      returnVal.insert("appId",
+                       account[JSON_ACCOUNT_ARRAY_FIELD_APPID].toString());
+      returnVal.insert("type",
+                       account[JSON_ACCOUNT_ARRAY_FIELD_TYPE].toString());
       returnVal.insert("username",
                        account[JSON_ACCOUNT_ARRAY_FIELD_USERNAME].toString());
-      returnVal.insert("password",
-                       QString::fromStdString(password.toStdString()));
-      returnVal.insert("extras",
-                       account[JSON_ACCOUNT_ARRAY_FIELD_EXTRAS].toString());
+      returnVal.insert("url", account[JSON_ACCOUNT_ARRAY_FIELD_URL].toString());
     }
+  }
+
+  if (returnVal.size() <= 0) {
+    qDebug().noquote() << "    [ERROR] Account not found";
   }
 
   return returnVal;
 }
 
-QString RootDBusInterface::createAccount(QString name, QString username,
-                                         QString password, QString extras) {
-  qDebug() << "createAccount :" << name << username << password << extras;
+QString RootDBusInterface::getAccountPassword(QString secret) {
+  qDebug().noquote() << "* Account password requested";
 
-  if (!accountsJsonObject.contains(JSON_FIELD_ACCOUNTS)) {
-    accountsJsonObject[JSON_FIELD_ACCOUNTS] = QJsonArray();
+  QString secretHashed =
+      QCryptographicHash::hash(QByteArray::fromStdString(secret.toStdString()),
+                               QCryptographicHash::Sha256);
+
+  QJsonArray accounts = accountsJsonObject[JSON_FIELD_ACCOUNTS].toArray();
+
+  for (int i = 0; i < accounts.size(); i++) {
+    QJsonObject account = accounts[i].toObject();
+
+    if (account[JSON_ACCOUNT_ARRAY_FIELD_SECRET].toString() == secretHashed) {
+      qDebug().noquote()
+          << "    Found user `" +
+                 account[JSON_ACCOUNT_ARRAY_FIELD_USERNAME].toString() + "`";
+
+      return account[JSON_ACCOUNT_ARRAY_FIELD_PASSWORD].toString();
+    }
   }
 
-  QString id = QUuid::createUuid().toString(QUuid::StringFormat::WithoutBraces);
-  QJsonArray accountsArray = accountsJsonObject[JSON_FIELD_ACCOUNTS].toArray();
+  qDebug().noquote() << "    [ERROR] Account not found";
+  return "";
+}
 
-  QJsonObject accountObject;
-  accountObject[JSON_ACCOUNT_ARRAY_FIELD_EXTRAS] = extras;
-  accountObject[JSON_ACCOUNT_ARRAY_FIELD_USERNAME] = username;
-  accountObject[JSON_ACCOUNT_ARRAY_FIELD_ACCOUNTNAME] = name;
-  accountObject[JSON_ACCOUNT_ARRAY_FIELD_ID] = id;
+QString RootDBusInterface::createWebDAVAccount(QString appId, QString username,
+                                               QString password, QString url) {
+  qDebug().noquote() << "* Create Request for WebDAV Account `" + username +
+                            "` Received";
 
-  wallet->writeEntry(username,
-                     QByteArray::fromStdString(password.toStdString()));
+  return nullptr;
+}
 
-  accountsArray.append(accountObject);
-  accountsJsonObject[JSON_FIELD_ACCOUNTS] = accountsArray;
+QString RootDBusInterface::createCardDAVAccount(QString appId, QString username,
+                                                QString password, QString url) {
+  qDebug().noquote() << "* Create Request for CardDAV Account `" + username +
+                            "` Received";
 
-  writeAccountsJsonObjectToFile();
+  QString secret = "";
+  QEventLoop *qloop = new QEventLoop();
 
-  return id;
+  if (QFile(getManifestPath(appId)).exists()) {
+    CardDAV *m_CardDAV = new CardDAV(url, username, password);
+    CardDAVReply *reply = m_CardDAV->testConnection();
+
+    this->connect(
+        reply, &CardDAVReply::testConnectionResponse,
+        [=, &secret](bool isSuccess) {
+          if (isSuccess) {
+            qDebug().noquote() << "    Success connecting to Server";
+
+            if (!accountsJsonObject.contains(JSON_FIELD_ACCOUNTS)) {
+              accountsJsonObject[JSON_FIELD_ACCOUNTS] = QJsonArray();
+            }
+
+            secret = QUuid::createUuid().toString(
+                QUuid::StringFormat::WithoutBraces);
+            QString secretHashed = QCryptographicHash::hash(
+                QByteArray::fromStdString(secret.toStdString()),
+                QCryptographicHash::Sha256);
+            QJsonArray accountsArray =
+                accountsJsonObject[JSON_FIELD_ACCOUNTS].toArray();
+
+            QJsonObject accountObject;
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_ID] =
+                QUuid::createUuid().toString(
+                    QUuid::StringFormat::WithoutBraces);
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_SECRET] = secretHashed;
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_APPID] = appId;
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_TYPE] = "CARDDAV";
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_USERNAME] = username;
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_PASSWORD] = password;
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_URL] = url;
+
+            accountsArray.append(accountObject);
+            accountsJsonObject[JSON_FIELD_ACCOUNTS] = accountsArray;
+
+            writeAccountsJsonObjectToFile();
+
+            qDebug().noquote() << "    Account Created";
+
+            QTimer::singleShot(0, qloop, &QEventLoop::quit);
+          }
+        });
+    this->connect(reply, &CardDAVReply::error,
+                  [=](QNetworkReply::NetworkError err) {
+                    qDebug().noquote()
+                        << "    [ERROR] Could not connect to server" << err;
+                    qDebug().noquote() << "    [ERROR] Account not created";
+
+                    QTimer::singleShot(0, qloop, &QEventLoop::quit);
+                  });
+
+    qloop->exec();
+  } else {
+    qDebug().noquote() << "    [ERROR] Invalid `appId`";
+  }
+
+  return secret;
 }
 
 bool RootDBusInterface::removeAccount(QString id) {
-  qDebug() << "removeAccount :" << id;
+  qDebug().noquote() << "* Remove Account Requested";
 
   bool accountDeleted = false;
   QJsonArray accountsArray = accountsJsonObject[JSON_FIELD_ACCOUNTS].toArray();
@@ -133,12 +228,13 @@ bool RootDBusInterface::removeAccount(QString id) {
     QJsonObject accountObject = accountsArray[i].toObject();
 
     if (accountObject[JSON_ACCOUNT_ARRAY_FIELD_ID].toString() == id) {
-      qDebug() << "Removing account" << id;
+      qDebug().noquote()
+          << "    Account Removed with username `" +
+                 accountObject[JSON_ACCOUNT_ARRAY_FIELD_USERNAME].toString() +
+                 "`";
 
       accountsArray.removeAt(i);
       accountsJsonObject[JSON_FIELD_ACCOUNTS] = accountsArray;
-      wallet->removeEntry(
-          accountObject[JSON_ACCOUNT_ARRAY_FIELD_USERNAME].toString());
 
       accountDeleted = true;
       break;
@@ -146,6 +242,10 @@ bool RootDBusInterface::removeAccount(QString id) {
   }
 
   writeAccountsJsonObjectToFile();
+
+  if (!accountDeleted) {
+    qDebug().noquote() << "    [ERROR] Account not found";
+  }
 
   return accountDeleted;
 }

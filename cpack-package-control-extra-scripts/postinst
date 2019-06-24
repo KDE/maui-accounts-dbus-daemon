@@ -1,0 +1,4 @@
+echo "POSTinst $@"
+
+systemctl start dbus-org.maui-accounts-dbus-daemon.service
+systemctl enable dbus-org.maui-accounts-dbus-daemon.service
