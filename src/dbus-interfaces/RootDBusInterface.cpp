@@ -12,7 +12,9 @@
 #include <QTimer>
 #include <QUuid>
 #include <libdavclient/CardDAV.hpp>
+#include <libdavclient/WebDAV.hpp>
 #include <libdavclient/utils/CardDAVReply.hpp>
+#include <libdavclient/utils/WebDAVReply.hpp>
 
 QString RootDBusInterface::name() { return "org.mauikit.accounts"; }
 
@@ -147,7 +149,69 @@ QString RootDBusInterface::createWebDAVAccount(QString appId, QString username,
   qDebug().noquote() << "* Create Request for WebDAV Account `" + username +
                             "` Received";
 
-  return nullptr;
+  QString secret = "";
+  QEventLoop *qloop = new QEventLoop();
+
+  if (QFile(getManifestPath(appId)).exists()) {
+    WebDAV *m_WebDAV = new WebDAV(url, username, password);
+    WebDAVReply *reply = m_WebDAV->testConnection();
+
+    this->connect(
+        reply, &WebDAVReply::testConnectionResponse,
+        [=, &secret](bool isSuccess) {
+          if (isSuccess) {
+            qDebug().noquote() << "    Success connecting to Server";
+
+            if (!accountsJsonObject.contains(JSON_FIELD_ACCOUNTS)) {
+              accountsJsonObject[JSON_FIELD_ACCOUNTS] = QJsonArray();
+            }
+
+            secret = QUuid::createUuid().toString(
+                QUuid::StringFormat::WithoutBraces);
+            QString secretHashed = QCryptographicHash::hash(
+                QByteArray::fromStdString(secret.toStdString()),
+                QCryptographicHash::Sha256);
+            QJsonArray accountsArray =
+                accountsJsonObject[JSON_FIELD_ACCOUNTS].toArray();
+
+            QJsonObject accountObject;
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_ID] =
+                QUuid::createUuid().toString(
+                    QUuid::StringFormat::WithoutBraces);
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_SECRET] = secretHashed;
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_APPID] = appId;
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_TYPE] = "WEBDAV";
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_USERNAME] = username;
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_PASSWORD] = password;
+            accountObject[JSON_ACCOUNT_ARRAY_FIELD_URL] = url;
+
+            accountsArray.append(accountObject);
+            accountsJsonObject[JSON_FIELD_ACCOUNTS] = accountsArray;
+
+            writeAccountsJsonObjectToFile();
+
+            qDebug().noquote() << "    Account Created";
+
+            QTimer::singleShot(0, qloop, &QEventLoop::quit);
+          } else {
+            qDebug().noquote() << "    [ERROR] Could not connect to server";
+          }
+        });
+    this->connect(reply, &WebDAVReply::error,
+                  [=](QNetworkReply::NetworkError err) {
+                    qDebug().noquote()
+                        << "    [ERROR] Could not connect to server" << err;
+                    qDebug().noquote() << "    [ERROR] Account not created";
+
+                    QTimer::singleShot(0, qloop, &QEventLoop::quit);
+                  });
+
+    qloop->exec();
+  } else {
+    qDebug().noquote() << "    [ERROR] Invalid `appId`";
+  }
+
+  return secret;
 }
 
 QString RootDBusInterface::createCardDAVAccount(QString appId, QString username,
