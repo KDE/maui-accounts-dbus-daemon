@@ -17,6 +17,7 @@ class RootDBusInterface : public DBusInterface {
   RootDBusInterface();
 
  private:
+  QString masterPassword = "";
   QJsonObject accountsJsonObject;
 
   const QString JSON_FIELD_ACCOUNTS = "accounts";
@@ -32,8 +33,11 @@ class RootDBusInterface : public DBusInterface {
 
   void writeAccountsJsonObjectToFile();
   QString getManifestPath(QString appId);
+  void readAccountsDB();
 
  public slots:
+  Q_SCRIPTABLE bool isPasswordSet();
+  Q_SCRIPTABLE void setPassword(QString password);
   Q_SCRIPTABLE QList<QVariant> getAccountIds();
   Q_SCRIPTABLE QList<QVariant> getAccountIdsByType(QString type);
   Q_SCRIPTABLE QMap<QString, QVariant> getAccount(QString id);

@@ -29,6 +29,7 @@ set(
     SOURCES
 
     src/main.cpp
+    src/EncryptionHelper.cpp
     src/dbus-interfaces/RootDBusInterface.cpp
 )
 
@@ -36,6 +37,7 @@ set(
 set(
     HEADERS
 
+    src/EncryptionHelper.hpp
     src/dbus-interfaces/DBusInterface.hpp
     src/dbus-interfaces/RootDBusInterface.hpp
 )

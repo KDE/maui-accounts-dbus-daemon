@@ -1,9 +1,11 @@
+#include "EncryptionHelper.hpp"
 #include "dbus-interfaces/DBusInterface.hpp"
 #include "dbus-interfaces/RootDBusInterface.hpp"
 
 #include <QCoreApplication>
 #include <QDBusConnection>
 #include <QDBusError>
+#include <QDebug>
 
 #define SERVICE_NAME "org.mauikit.accounts"
 
@@ -26,4 +28,6 @@ int main(int argc, char *argv[]) {
                                               QDBusConnection::ExportAllSlots);
 
   return app.exec();
+
+  return 0;
 }

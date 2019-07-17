@@ -1,4 +1,5 @@
 #include "RootDBusInterface.hpp"
+#include "../EncryptionHelper.hpp"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -19,9 +20,6 @@
 QString RootDBusInterface::name() { return "org.mauikit.accounts"; }
 
 RootDBusInterface::RootDBusInterface() {
-  qDebug() << QStandardPaths::writableLocation(
-      QStandardPaths::StandardLocation::AppDataLocation);
-
   QDir appDataFolder(QStandardPaths::writableLocation(
       QStandardPaths::StandardLocation::AppDataLocation));
   if (!appDataFolder.exists()) {
@@ -31,18 +29,7 @@ RootDBusInterface::RootDBusInterface() {
   accountsJsonFilePath =
       QStandardPaths::writableLocation(
           QStandardPaths::StandardLocation::AppDataLocation) +
-      "/accounts.json";
-
-  QFile accountJsonFile(accountsJsonFilePath);
-
-  if (!accountJsonFile.open(QIODevice::ReadWrite)) {
-    qWarning("Couldn't open config file.");
-  }
-
-  accountsJsonObject =
-      QJsonDocument::fromJson(accountJsonFile.readAll()).object();
-
-  accountJsonFile.close();
+      "/accounts.db.crypt";
 }
 
 void RootDBusInterface::writeAccountsJsonObjectToFile() {
@@ -52,12 +39,47 @@ void RootDBusInterface::writeAccountsJsonObjectToFile() {
     qWarning("Couldn't open config file.");
   }
 
-  accountJsonFile.write(QJsonDocument(accountsJsonObject).toJson());
+  QByteArray accountsData = QByteArray::fromStdString(
+      EncryptionHelper::encrypt(masterPassword,
+                                QJsonDocument(accountsJsonObject)
+                                    .toJson(QJsonDocument::JsonFormat::Compact))
+          .toStdString());
+
+  accountJsonFile.write(accountsData);
   accountJsonFile.close();
 }
 
 QString RootDBusInterface::getManifestPath(QString appId) {
   return "/usr/share/maui-accounts/manifests/" + appId + ".json";
+}
+
+void RootDBusInterface::readAccountsDB() {
+  QFile accountJsonFile(accountsJsonFilePath);
+
+  if (!accountJsonFile.open(QIODevice::ReadOnly)) {
+    qWarning("Couldn't open config file.");
+    accountsJsonObject = QJsonObject();
+
+    writeAccountsJsonObjectToFile();
+  } else {
+    QString accountsData =
+        EncryptionHelper::decrypt(masterPassword, accountsJsonFilePath);
+    QByteArray accountsjsonData =
+        QByteArray::fromStdString(accountsData.toStdString());
+
+    accountsJsonObject = QJsonDocument::fromJson(accountsjsonData).object();
+
+    accountJsonFile.close();
+
+    qDebug() << accountsData;
+  }
+}
+
+bool RootDBusInterface::isPasswordSet() { return masterPassword != ""; }
+
+void RootDBusInterface::setPassword(QString password) {
+  masterPassword = password;
+  readAccountsDB();
 }
 
 QList<QVariant> RootDBusInterface::getAccountIds() {
