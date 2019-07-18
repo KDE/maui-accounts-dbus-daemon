@@ -34,6 +34,8 @@ class RootDBusInterface : public DBusInterface {
   void writeAccountsJsonObjectToFile();
   QString getManifestPath(QString appId);
   void readAccountsDB();
+  QString insertAccountToDb(QString appId, QString type, QString username,
+                            QString password, QString url);
 
  public slots:
   Q_SCRIPTABLE bool isPasswordSet();

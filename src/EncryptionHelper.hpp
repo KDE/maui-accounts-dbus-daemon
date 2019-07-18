@@ -7,8 +7,6 @@ class EncryptionHelper {
  public:
   static QString encrypt(QString password, QString text);
   static QString decrypt(QString password, QString filePath);
-
-  static QString inputMasterPassword();
 };
 
 #endif

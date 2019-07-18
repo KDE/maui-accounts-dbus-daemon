@@ -75,6 +75,58 @@ void RootDBusInterface::readAccountsDB() {
   }
 }
 
+QString RootDBusInterface::insertAccountToDb(QString appId, QString type,
+                                             QString username, QString password,
+                                             QString url) {
+  if (!accountsJsonObject.contains(JSON_FIELD_ACCOUNTS)) {
+    accountsJsonObject[JSON_FIELD_ACCOUNTS] = QJsonArray();
+  }
+
+  bool accountFound = false;
+  QString secret = "";
+  QJsonArray accountsArray = accountsJsonObject[JSON_FIELD_ACCOUNTS].toArray();
+
+  for (int i = 0; i < accountsArray.size(); i++) {
+    QJsonObject obj = accountsArray.at(i).toObject();
+
+    if (obj[JSON_ACCOUNT_ARRAY_FIELD_APPID].toString() == appId &&
+        obj[JSON_ACCOUNT_ARRAY_FIELD_TYPE].toString() == type &&
+        obj[JSON_ACCOUNT_ARRAY_FIELD_USERNAME].toString() == username &&
+        obj[JSON_ACCOUNT_ARRAY_FIELD_PASSWORD].toString() == password &&
+        obj[JSON_ACCOUNT_ARRAY_FIELD_URL].toString() == url) {
+      qDebug().noquote() << "    Account already added";
+
+      secret = obj[JSON_ACCOUNT_ARRAY_FIELD_SECRET].toString();
+      accountFound = true;
+
+      break;
+    }
+  }
+
+  if (!accountFound) {
+    secret = QUuid::createUuid().toString(QUuid::StringFormat::WithoutBraces);
+
+    QJsonObject accountObject;
+    accountObject[JSON_ACCOUNT_ARRAY_FIELD_ID] =
+        QUuid::createUuid().toString(QUuid::StringFormat::WithoutBraces);
+    accountObject[JSON_ACCOUNT_ARRAY_FIELD_SECRET] = secret;
+    accountObject[JSON_ACCOUNT_ARRAY_FIELD_APPID] = appId;
+    accountObject[JSON_ACCOUNT_ARRAY_FIELD_TYPE] = type;
+    accountObject[JSON_ACCOUNT_ARRAY_FIELD_USERNAME] = username;
+    accountObject[JSON_ACCOUNT_ARRAY_FIELD_PASSWORD] = password;
+    accountObject[JSON_ACCOUNT_ARRAY_FIELD_URL] = url;
+
+    accountsArray.append(accountObject);
+    accountsJsonObject[JSON_FIELD_ACCOUNTS] = accountsArray;
+
+    writeAccountsJsonObjectToFile();
+
+    qDebug().noquote() << "    Account Created";
+  }
+
+  return secret;
+}
+
 bool RootDBusInterface::isPasswordSet() { return masterPassword != ""; }
 
 void RootDBusInterface::setPassword(QString password) {
@@ -144,16 +196,12 @@ QMap<QString, QVariant> RootDBusInterface::getAccount(QString id) {
 QString RootDBusInterface::getAccountPassword(QString secret) {
   qDebug().noquote() << "* Account password requested";
 
-  QString secretHashed =
-      QCryptographicHash::hash(QByteArray::fromStdString(secret.toStdString()),
-                               QCryptographicHash::Sha256);
-
   QJsonArray accounts = accountsJsonObject[JSON_FIELD_ACCOUNTS].toArray();
 
   for (int i = 0; i < accounts.size(); i++) {
     QJsonObject account = accounts[i].toObject();
 
-    if (account[JSON_ACCOUNT_ARRAY_FIELD_SECRET].toString() == secretHashed) {
+    if (account[JSON_ACCOUNT_ARRAY_FIELD_SECRET].toString() == secret) {
       qDebug().noquote()
           << "    Found user `" +
                  account[JSON_ACCOUNT_ARRAY_FIELD_USERNAME].toString() + "`";
@@ -178,47 +226,20 @@ QString RootDBusInterface::createWebDAVAccount(QString appId, QString username,
     WebDAV *m_WebDAV = new WebDAV(url, username, password);
     WebDAVReply *reply = m_WebDAV->testConnection();
 
-    this->connect(
-        reply, &WebDAVReply::testConnectionResponse,
-        [=, &secret](bool isSuccess) {
-          if (isSuccess) {
-            qDebug().noquote() << "    Success connecting to Server";
+    this->connect(reply, &WebDAVReply::testConnectionResponse,
+                  [=, &secret](bool isSuccess) {
+                    if (isSuccess) {
+                      qDebug().noquote() << "    Success connecting to Server";
 
-            if (!accountsJsonObject.contains(JSON_FIELD_ACCOUNTS)) {
-              accountsJsonObject[JSON_FIELD_ACCOUNTS] = QJsonArray();
-            }
+                      secret = insertAccountToDb(appId, "WEBDAV", username,
+                                                 password, url);
 
-            secret = QUuid::createUuid().toString(
-                QUuid::StringFormat::WithoutBraces);
-            QString secretHashed = QCryptographicHash::hash(
-                QByteArray::fromStdString(secret.toStdString()),
-                QCryptographicHash::Sha256);
-            QJsonArray accountsArray =
-                accountsJsonObject[JSON_FIELD_ACCOUNTS].toArray();
-
-            QJsonObject accountObject;
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_ID] =
-                QUuid::createUuid().toString(
-                    QUuid::StringFormat::WithoutBraces);
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_SECRET] = secretHashed;
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_APPID] = appId;
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_TYPE] = "WEBDAV";
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_USERNAME] = username;
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_PASSWORD] = password;
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_URL] = url;
-
-            accountsArray.append(accountObject);
-            accountsJsonObject[JSON_FIELD_ACCOUNTS] = accountsArray;
-
-            writeAccountsJsonObjectToFile();
-
-            qDebug().noquote() << "    Account Created";
-
-            QTimer::singleShot(0, qloop, &QEventLoop::quit);
-          } else {
-            qDebug().noquote() << "    [ERROR] Could not connect to server";
-          }
-        });
+                      QTimer::singleShot(0, qloop, &QEventLoop::quit);
+                    } else {
+                      qDebug().noquote()
+                          << "    [ERROR] Could not connect to server";
+                    }
+                  });
     this->connect(reply, &WebDAVReply::error,
                   [=](QNetworkReply::NetworkError err) {
                     qDebug().noquote()
@@ -248,45 +269,17 @@ QString RootDBusInterface::createCardDAVAccount(QString appId, QString username,
     CardDAV *m_CardDAV = new CardDAV(url, username, password);
     CardDAVReply *reply = m_CardDAV->testConnection();
 
-    this->connect(
-        reply, &CardDAVReply::testConnectionResponse,
-        [=, &secret](bool isSuccess) {
-          if (isSuccess) {
-            qDebug().noquote() << "    Success connecting to Server";
+    this->connect(reply, &CardDAVReply::testConnectionResponse,
+                  [=, &secret](bool isSuccess) {
+                    if (isSuccess) {
+                      qDebug().noquote() << "    Success connecting to Server";
 
-            if (!accountsJsonObject.contains(JSON_FIELD_ACCOUNTS)) {
-              accountsJsonObject[JSON_FIELD_ACCOUNTS] = QJsonArray();
-            }
+                      secret = insertAccountToDb(appId, "CARDDAV", username,
+                                                 password, url);
 
-            secret = QUuid::createUuid().toString(
-                QUuid::StringFormat::WithoutBraces);
-            QString secretHashed = QCryptographicHash::hash(
-                QByteArray::fromStdString(secret.toStdString()),
-                QCryptographicHash::Sha256);
-            QJsonArray accountsArray =
-                accountsJsonObject[JSON_FIELD_ACCOUNTS].toArray();
-
-            QJsonObject accountObject;
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_ID] =
-                QUuid::createUuid().toString(
-                    QUuid::StringFormat::WithoutBraces);
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_SECRET] = secretHashed;
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_APPID] = appId;
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_TYPE] = "CARDDAV";
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_USERNAME] = username;
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_PASSWORD] = password;
-            accountObject[JSON_ACCOUNT_ARRAY_FIELD_URL] = url;
-
-            accountsArray.append(accountObject);
-            accountsJsonObject[JSON_FIELD_ACCOUNTS] = accountsArray;
-
-            writeAccountsJsonObjectToFile();
-
-            qDebug().noquote() << "    Account Created";
-
-            QTimer::singleShot(0, qloop, &QEventLoop::quit);
-          }
-        });
+                      QTimer::singleShot(0, qloop, &QEventLoop::quit);
+                    }
+                  });
     this->connect(reply, &CardDAVReply::error,
                   [=](QNetworkReply::NetworkError err) {
                     qDebug().noquote()

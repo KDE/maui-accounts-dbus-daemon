@@ -15,8 +15,9 @@ QString EncryptionHelper::encrypt(QString password, QString text) {
   QString stdout = process.readAllStandardOutput();
   QString stderr = process.readAllStandardError();
 
-  qDebug() << "ENCRYPT OUTPUT :" << stdout;
-  qDebug() << "ENCRYPT ERROR  :" << stderr;
+  if (stderr != "") {
+    qDebug() << "ENCRYPT ERROR :" << stderr;
+  }
 
   return stdout;
 }
@@ -31,21 +32,9 @@ QString EncryptionHelper::decrypt(QString password, QString filepath) {
   QString stdout = process.readAllStandardOutput();
   QString stderr = process.readAllStandardError();
 
-  qDebug() << "DECRYPT OUTPUT :" << stdout;
-  qDebug() << "DECRYPT ERROR  :" << stderr;
+  if (stderr != "") {
+    qDebug() << "DECRYPT ERROR :" << stderr;
+  }
 
   return stdout;
-}
-
-QString EncryptionHelper::inputMasterPassword() {
-  QProcess process;
-  process.start(
-      "DISPLAY=:0 kdialog --password \"Enter MAUI Accounts Master Password. "
-      "This password "
-      "will be used to encrypt/decrypt secure data\"");
-  process.waitForFinished(-1);
-
-  qDebug() << "INPUT PASSWORD ERROR :" << process.readAllStandardError();
-
-  return process.readAllStandardOutput();
 }
